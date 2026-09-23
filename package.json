@@ -1,0 +1,12 @@
+{
+  "name": "pointiq",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PointIQ — rotation analytics, win probability, and recruiting for volleyball programs",
+  "scripts": {
+    "test": "node --test tests/run-node.test.js",
+    "samples": "node tools/make-samples.js",
+    "serve": "python3 tools/serve.py 8080"
+  }
+}

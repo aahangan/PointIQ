@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>PointIQ engine tests</title>
+<style>body{font:14px/1.5 ui-monospace,monospace;padding:16px}.pass{color:#16794a}.fail{color:#b3261e}</style>
+<h1>PointIQ engine tests</h1>
+<pre id="out">running…</pre>
+<script type="module">
+import { tests } from './engine.test.js';
+const out = document.getElementById('out');
+const lines = []; let pass = 0, fail = 0;
+for (const t of tests) {
+  const t0 = performance.now();
+  try { await t.fn(); pass++; lines.push(`<span class="pass">✓</span> ${t.name} <small>(${(performance.now() - t0).toFixed(0)} ms)</small>`); }
+  catch (e) { fail++; lines.push(`<span class="fail">✗ ${t.name}\n    ${e.message}</span>`); }
+}
+lines.push(`\n${pass} passed, ${fail} failed`);
+out.innerHTML = lines.join('\n');
+window.__results = { pass, fail, text: out.textContent };
+</script>

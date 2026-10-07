@@ -12,7 +12,14 @@ No build step and no dependencies. It's plain ES modules.
 python3 tools/serve.py 8080
 ```
 
-Then open http://localhost:8080/index.html. Tests run at http://localhost:8080/tests/index.html (19 tests). With Node 18+ installed, `npm test` runs the same suite.
+Then open http://localhost:8080/index.html. Tests run at http://localhost:8080/tests/index.html (21 tests). With Node 18+ installed, `npm test` runs the same suite.
+
+The predictive model is a Python service in [`model/`](model/README.md):
+
+```bash
+cd model && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python -m pointiq_model serve     # then open Model lab in PointIQ
+```
 
 ## What's in the app
 
@@ -25,6 +32,7 @@ Then open http://localhost:8080/index.html. Tests run at http://localhost:8080/t
 | Roster | Season stat entry with shrunk model ratings | all |
 | Import | DataVolley `.dvw` (Hudl VolleyMetrics, DataVolley, VolleyStation), SoloStats/Hudl/MaxPreps CSV with column mapping, rotation sheets, multi-season history | varies |
 | Multi-season model | Bayesian hierarchical model: shrunk current-season rates, next-season projections, persistence, P(rotation is really weak) | Program+ |
+| Model lab | Rotation odds learned from logged rallies by the Python service, out-of-sample Brier/calibration vs a score-only baseline, exact-vs-Monte-Carlo check, switch predictions to learned odds | Program+ |
 | Recruiting board | Level-adjusted, sample-size-aware prospect ratings with 80% ranges; staff weights; compare; notes; status pipeline | Program + Recruiting |
 | Plans | Tiers, monthly / season / annual pricing, feature matrix, demo plan switcher | — |
 
@@ -48,9 +56,17 @@ Then open http://localhost:8080/index.html. Tests run at http://localhost:8080/t
 
 **Recruiting (`src/engine/scouting.js`).** Beta and gamma-Poisson shrinkage for sample size, a competition-level shift to an 18-Open equivalent, and position-weighted z-scores rescaled to a 20–80 scale. Measurables are blended in, and the 80% range comes from posterior simulation.
 
+## Predictive model (rally-learned)
+
+The Live tracker logs every rally (rotation, server, score, outcome), and DataVolley imports add theirs. The Python service in `model/` fits per-rotation odds with a hierarchical Bayesian logistic model, feeds them to the exact set Markov chain, and evaluates out of sample with Brier score and calibration against a score-only baseline. On simulated seasons:
+- pre-match rotation odds alone barely beat the score;
+- the model that also updates tonight's opponent strength rally by rally wins clearly (+5% Brier skill).
+
+Details and caveats: [model/README.md](model/README.md), report: [model/reports/demo/REPORT.md](model/reports/demo/REPORT.md).
+
 ## Honest limits
 
-- **Effect sizes in the player model are informed priors, not yet fit to data.** The coefficients in `LEAGUE.beta` (for example, how much +0.100 hitting efficiency moves side-out) should be re-estimated from a program's own `.dvw` rallies. With a season of VolleyMetrics files that's a logistic regression per phase, and it's the first thing to do with real data.
+- **Effect sizes in the player (what-if) model are informed priors, not yet fit to data.** Rotation odds can now be learned from rallies (Model lab), but the coefficients in `LEAGUE.beta` that translate player stats into rotation odds (for example, how much +0.100 hitting efficiency moves side-out) still need re-estimating from a program's own rallies.
 - **The `.dvw` parser is tested against files written to the published DataVolley layout** (the same one the openvolley R/Python packages read), not yet against real VolleyMetrics exports. Validate on a handful of real files before a demo.
 - Recruiting level shifts and reference distributions are starting guesses. A staff should tune them, and a program's own signed-player history can calibrate them.
 - Data lives in the browser (localStorage) with JSON backup/restore. Multi-seat staff sharing needs the hosted backend described in `BUSINESS.md`.
@@ -64,4 +80,5 @@ src/engine/                    pure math and parsing (no DOM), unit-tested
 src/app/                       UI: store.js (state), ui.js (charts), main.js (router), views/*
 tests/                         engine.test.js + browser runner + node runner
 tools/serve.py                 no-cache dev server
+model/                         Python model service: estimation, Markov set model, evaluation, Flask API, tests
 ```

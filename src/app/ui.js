@@ -150,3 +150,26 @@ export function court(zones, { players, liberoId = null, subIds = [], server = n
 export function meter(p, { label = '', big = false } = {}) {
   return `<div class="meter${big ? ' meter-big' : ''}" role="img" aria-label="${esc(label)} ${pct(p)}"><div class="meter-fill" style="width:${(100 * p).toFixed(1)}%"></div><div class="meter-mid"></div></div>`;
 }
+
+// ---- Calibration chart: predicted vs observed set-win frequency ---------------------------
+// series: [{ label, cls, points: [{ predicted, observed, n }] }]
+export function calibrationChart(series) {
+  const W = 420, H = 420, p0 = 44, p1 = 14;
+  const X = (v) => p0 + v * (W - p0 - p1), Y = (v) => H - p0 + -v * (H - p0 - p1);
+  const maxN = Math.max(1, ...series.flatMap((s) => s.points.map((q) => q.n)));
+  let s = `<svg class="chart calib" viewBox="0 0 ${W} ${H}" role="img" aria-label="Calibration: predicted probability against observed frequency">`;
+  for (let k = 0; k <= 5; k++) {
+    const v = k / 5;
+    s += `<line x1="${X(0)}" x2="${X(1)}" y1="${Y(v)}" y2="${Y(v)}" class="grid"/><line x1="${X(v)}" x2="${X(v)}" y1="${Y(0)}" y2="${Y(1)}" class="grid"/>`;
+    s += `<text x="${X(v)}" y="${H - p0 + 16}" text-anchor="middle" class="ax">${v * 100}%</text><text x="${p0 - 6}" y="${Y(v) + 4}" text-anchor="end" class="ax">${v * 100}%</text>`;
+  }
+  s += `<line x1="${X(0)}" y1="${Y(0)}" x2="${X(1)}" y2="${Y(1)}" class="ref"/>`;
+  s += `<text x="${(X(0) + X(1)) / 2}" y="${H - 6}" text-anchor="middle" class="ax">Predicted chance of winning the set</text>`;
+  s += `<text x="12" y="${(Y(0) + Y(1)) / 2}" text-anchor="middle" class="ax" transform="rotate(-90 12 ${(Y(0) + Y(1)) / 2})">How often it happened</text>`;
+  for (const ser of series) {
+    const pts = ser.points.map((q) => `${X(q.predicted).toFixed(1)},${Y(q.observed).toFixed(1)}`);
+    s += `<polyline points="${pts.join(' ')}" class="cal-line ${ser.cls}"/>`;
+    for (const q of ser.points) s += `<circle cx="${X(q.predicted)}" cy="${Y(q.observed)}" r="${(2.5 + 6 * Math.sqrt(q.n / maxN)).toFixed(1)}" class="cal-dot ${ser.cls}"><title>${esc(ser.label)}: predicted ${pct(q.predicted, 0)}, happened ${pct(q.observed, 0)} (${q.n} states)</title></circle>`;
+  }
+  return s + '</svg>';
+}

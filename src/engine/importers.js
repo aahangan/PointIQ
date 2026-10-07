@@ -89,6 +89,7 @@ export function autoMap(headers) {
 
 export function detectFormat(headers) {
   const n = headers.map(norm);
+  if (['rotus', 'serving', 'won'].every((h) => n.includes(h))) return 'rallies';
   if (n.includes('season') && n.some((h) => h.startsWith('rot')) && n.includes('phase')) return 'multiseason';
   if (n.some((h) => h.startsWith('rot')) && n.length <= 6) return 'rotation';
   const m = autoMap(headers);
@@ -215,7 +216,7 @@ export function parseDVW(text) {
     } else if (section === '[3SCOUT]') {
       scoutLines++;
       const code = f[0];
-      if (/^\*\*\dset/i.test(code)) { const m = code.match(/\*\*(\d)set/i); if (m) setNo = Number(m[1]) + 1; continue; }
+      if (/^\*\*\dset/i.test(code)) { const m = code.match(/\*\*(\d)set/i); if (m) setNo = Number(m[1]) + 1; lastScore = [0, 0]; continue; }
       const side = code[0] === '*' ? 'home' : code[0] === 'a' ? 'visiting' : null;
       if (!side) continue;
       const z = code.match(/^[*a]z(\d)/);
@@ -234,6 +235,7 @@ export function parseDVW(text) {
       const t = { side, number: String(Number(s[2])), skill: s[3], type: s[4], ev: s[5], set, rallyIdx: rallies.length };
       if (t.skill === 'S') {
         if (rally) meta.warnings.push(`Rally without a point code before serve in set ${set}`);
+        if (rallies.length && rallies[rallies.length - 1].set !== set && !rally) lastScore = [0, 0]; // new set without a marker line
         rally = { set, serving: side, homeRot: hsp - 1, visRot: vsp - 1, homeScoreBefore: lastScore[0], visScoreBefore: lastScore[1], positions: pos.home[0] !== 'NaN' ? pos : null };
         if (set !== setNo) { setNo = set; }
       }
@@ -244,6 +246,26 @@ export function parseDVW(text) {
   meta.home = meta.teams[0]?.name || 'Home';
   meta.visiting = meta.teams[1]?.name || 'Visiting';
   return { meta, players, rallies, touches };
+}
+
+// Rally-log rows (the predictive model's input) for one side of a parsed match.
+export function dvwRallyRows(parsed, side, { matchId, opponent = '', season = '' } = {}) {
+  const ours = side === 'home';
+  return parsed.rallies.filter((r) => Number.isFinite(r.homeRot) && r.homeRot >= 0 && r.homeRot <= 5).map((r) => ({
+    match_id: matchId, opponent, season, set: r.set,
+    score_us: ours ? r.homeScoreBefore : r.visScoreBefore, score_them: ours ? r.visScoreBefore : r.homeScoreBefore,
+    rot_us: ours ? r.homeRot : r.visRot, rot_them: ours ? r.visRot : r.homeRot,
+    serving: r.serving === side ? 'us' : 'them', won: r.winner === side ? 1 : 0, server: '',
+  }));
+}
+
+export function parseRallyCSV({ rows }) {
+  return rows.map((r) => ({
+    match_id: r.match_id, date: r.date || '', opponent: r.opponent || '', season: r.season || '', set: Number(r.set),
+    score_us: Number(r.score_us), score_them: Number(r.score_them), rot_us: Number(r.rot_us), rot_them: r.rot_them === '' || r.rot_them == null ? -1 : Number(r.rot_them),
+    serving: /^(us|0|home|true)$/i.test(String(r.serving).trim()) ? 'us' : 'them', won: Number(r.won), server: r.server || '',
+    ...(r.target ? { target: Number(r.target) } : {}),
+  })).filter((r) => r.match_id && r.rot_us >= 0 && r.rot_us <= 5 && (r.won === 0 || r.won === 1) && Number.isFinite(r.score_us));
 }
 
 // Rotation SO/BP counts for one side of a parsed match (also works for the opponent: free scouting report).

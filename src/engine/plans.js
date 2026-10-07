@@ -22,14 +22,14 @@ export const PLANS = [
     who: 'College programs and multi-team clubs',
     blurb: 'Multi-season modeling and full lineup search for a whole staff.',
     limits: { teams: 12, lineups: Infinity, imports: Infinity, seats: 6 },
-    features: ['rotation-input', 'set-prob', 'match-prob', 'csv-rotation', 'lineup-lab', 'libero-subs', 'start-optimizer', 'live-tracker', 'import-boxscore', 'import-dvw', 'opponent-report', 'hierarchical', 'order-search', 'game-theory', 'multi-team', 'data-export'],
+    features: ['rotation-input', 'set-prob', 'match-prob', 'csv-rotation', 'lineup-lab', 'libero-subs', 'start-optimizer', 'live-tracker', 'import-boxscore', 'import-dvw', 'opponent-report', 'hierarchical', 'order-search', 'game-theory', 'multi-team', 'data-export', 'model-lab'],
   },
   {
     key: 'recruit', name: 'Program + Recruiting', monthly: 149, season: 549, annual: 1490,
     who: 'D1 / D2 / D3 recruiting staffs',
     blurb: 'Level-adjusted prospect ratings with honest uncertainty.',
     limits: { teams: 12, lineups: Infinity, imports: Infinity, seats: 10, prospects: Infinity },
-    features: ['rotation-input', 'set-prob', 'match-prob', 'csv-rotation', 'lineup-lab', 'libero-subs', 'start-optimizer', 'live-tracker', 'import-boxscore', 'import-dvw', 'opponent-report', 'hierarchical', 'order-search', 'game-theory', 'multi-team', 'data-export', 'recruiting'],
+    features: ['rotation-input', 'set-prob', 'match-prob', 'csv-rotation', 'lineup-lab', 'libero-subs', 'start-optimizer', 'live-tracker', 'import-boxscore', 'import-dvw', 'opponent-report', 'hierarchical', 'order-search', 'game-theory', 'multi-team', 'data-export', 'model-lab', 'recruiting'],
   },
 ];
 
@@ -50,6 +50,7 @@ export const FEATURE_LABEL = {
   'game-theory': 'Start-rotation game theory (mixed strategy)',
   'multi-team': 'Multiple teams (JV, club age groups)',
   'data-export': 'Full data export',
+  'model-lab': 'Predictive model lab (rally-learned rates, calibration)',
   recruiting: 'Recruiting board and prospect ratings',
 };
 

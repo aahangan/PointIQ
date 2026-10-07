@@ -10,11 +10,12 @@ import data from './views/data.js';
 import seasons from './views/seasons.js';
 import recruit from './views/recruit.js';
 import plans from './views/plans.js';
+import model from './views/model.js';
 
-const VIEWS = [overview, lineup, match, live, roster, data, seasons, recruit, plans];
+const VIEWS = [overview, lineup, match, live, roster, data, seasons, model, recruit, plans];
 const GROUPS = [
   ['Game plan', ['overview', 'lineup', 'match', 'live']],
-  ['Team data', ['roster', 'data', 'seasons']],
+  ['Team data', ['roster', 'data', 'seasons', 'model']],
   ['Recruiting', ['recruit']],
   ['Account', ['plans']],
 ];

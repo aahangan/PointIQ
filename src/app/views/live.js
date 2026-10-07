@@ -5,6 +5,24 @@
 import { getState, update, team, opponent, activeProfile } from '../store.js';
 import { rallyMatrices, makeMatchModel, nextRot, US, THEM } from '../../engine/markov.js';
 import { esc, pct, wpLine, meter, toast, ICON } from '../ui.js';
+import { call, liveToRallies } from '../service.js';
+
+// Last answer from the Python model service, if it's running (shown beside the local number).
+let servicePred = null;
+let serviceSeq = 0;
+
+function askService(L) {
+  const s = getState(), t = team();
+  if (!s.service?.ok || !t.fitted || L.done) { servicePred = null; return; }
+  const seq = ++serviceSeq;
+  const tonight = L.rallies.map((r) => ({ phase: r.serving === US ? 'BP' : 'SO', rot_us: r.rotUs, won: r.weWon ? 1 : 0 }));
+  call('/api/predict', {
+    rates: t.fitted,
+    tonight: L.learn ? tonight : [],
+    state: { best_of: L.bestOf, target: L.target, deciding_target: L.decidingTarget, start_us: L.startUs, start_them: L.startThem, sets_us: L.setsUs, sets_them: L.setsThem, a: L.a, b: L.b, rot_us: L.rotUs, rot_them: L.rotThem, serving: L.serving === US ? 'us' : 'them', first_this_set: L.firstThisSet === US ? 'us' : 'them', them_so: opponent()?.so, them_bp: opponent()?.bp },
+  }, { timeout: 5000 }).then((r) => { if (seq === serviceSeq) { servicePred = r; document.dispatchEvent(new Event('pointiq:rerender')); } })
+    .catch(() => { if (seq === serviceSeq) servicePred = null; });
+}
 
 const KAPPA = 30; // pre-match estimate counts as 30 rallies of evidence per rotation/phase
 
@@ -67,6 +85,7 @@ function rally(weWon) {
     }
     L.series.push(L.done ? (L.setsUs > L.setsThem ? 1 : 0) : probs(L).match);
   });
+  askService(getState().live);
 }
 
 function undo() {
@@ -78,6 +97,7 @@ function undo() {
     const keep = { rallies: L.rallies, series: L.series.slice(0, -1), breaks: L.breaks.filter((b) => b <= L.series.length - 1) };
     s.live = { ...restored, ...keep };
   });
+  askService(getState().live);
 }
 
 export default {
@@ -124,6 +144,7 @@ export default {
           <div class="sb-wp">${pct(p.match)}</div>
           ${meter(p.match, { label: 'Match win probability' })}
           <div class="sb-wp-label">This set ${pct(p.set)}</div>
+          ${servicePred && !L.done ? `<div class="sb-wp-label" title="From the Python model service (rally-learned rates, in-match update)">Model service: <b>${pct(servicePred.match)}</b> match · ${pct(servicePred.set)} set</div>` : ''}
           <button class="btn btn-ghost btn-sm" data-action="undo"${L.rallies.length ? '' : ' disabled'}>Undo last rally</button>
         </div>
         <div class="sb-team ${L.serving === THEM && !L.done ? 'serving' : ''}">
@@ -162,19 +183,24 @@ export default {
       </section>`;
   },
   actions: {
-    start: () => update((s) => { s.live = newLive(s); }),
+    start: () => { servicePred = null; update((s) => { s.live = newLive(s); }); askService(getState().live); },
     us: () => rally(true),
     them: () => rally(false),
     undo: () => undo(),
-    end: () => update((s) => { s.live = null; }),
+    end: () => { servicePred = null; update((s) => { s.live = null; }); },
     save: () => {
       const season = document.getElementById('save-season').value.trim() || String(new Date().getFullYear());
       update((s) => {
         const t = team(), L = s.live;
         for (const ph of ['SO', 'BP']) L.us[ph].forEach((c, rot) => { if (c.n) t.history.push({ season, rot, phase: ph, won: c.won, n: c.n }); });
+        // Rally-by-rally log for the predictive model (Model lab).
+        const date = new Date().toISOString().slice(0, 10);
+        const rows = liveToRallies(L, { matchId: `${date}-${(opponent()?.name || 'opponent').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${Date.now().toString(36)}`, opponent: opponent()?.name || '', date });
+        t.rallies = [...(t.rallies || []), ...rows.map((r) => ({ ...r, season }))];
         s.live = null;
       });
-      toast(`Saved to ${season} history`);
+      servicePred = null;
+      toast(`Saved to ${season} history and the rally log`);
     },
   },
   changes: {

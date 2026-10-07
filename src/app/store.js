@@ -35,6 +35,7 @@ function freshState() {
     physicalWeight: 0.35,
     live: null,
     imports: [],
+    service: { url: 'http://127.0.0.1:5050', ok: false },
   };
 }
 
@@ -88,15 +89,17 @@ export function activeProfile(t = team()) {
   const current = modelProfile(t);
   if (src === 'model') return { profile: current, source: 'model' };
   let base = null;
+  if (src === 'fitted' && t.fitted && can('model-lab')) base = { so: t.fitted.so, bp: t.fitted.bp };
   if (src === 'hier' && can('hierarchical')) base = profileFromFit(hierFit(t));
   if (!base && t.observed) base = t.observed;
   if (!base) return { profile: current, source: 'model' };
   if (!t.baseline) return { profile: base, source: src };
+  // fitted / observed / hierarchical rates were measured with the baseline lineup
   const was = modelProfile(t, t.baseline);
   const adj = (b, c, w) => b.map((x, i) => expit(logit(x) + logit(c[i]) - logit(w[i])));
-  return { profile: { so: adj(base.so, current.so, was.so), bp: adj(base.bp, current.bp, was.bp) }, source: src === 'hier' && can('hierarchical') ? 'hier' : 'observed' };
+  return { profile: { so: adj(base.so, current.so, was.so), bp: adj(base.bp, current.bp, was.bp) }, source: src === 'fitted' && t.fitted && can('model-lab') ? 'fitted' : src === 'hier' && can('hierarchical') ? 'hier' : 'observed' };
 }
 
-export const SOURCE_LABEL = { model: 'Player model', observed: 'Observed this season', hier: 'Hierarchical (multi-season)' };
+export const SOURCE_LABEL = { model: 'Player model', observed: 'Observed this season', hier: 'Hierarchical (multi-season)', fitted: 'Learned from rallies' };
 
 export function uid(prefix = 'id') { return prefix + Math.random().toString(36).slice(2, 9); }

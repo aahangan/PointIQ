@@ -6,7 +6,7 @@ import { rng, fitBetaPrior, logit } from '../src/engine/stats.js';
 import { buildRotations, calibrate, candidateOrders } from '../src/engine/lineup.js';
 import { startMatrix, solveGame, searchOrders } from '../src/engine/optimize.js';
 import { fitHierarchical } from '../src/engine/hier.js';
-import { parseDVW, dvwRotationRecords, dvwPlayerStats, parseCSV, autoMap, boxRowsToStats, parseRotationCSV, detectFormat } from '../src/engine/importers.js';
+import { parseDVW, dvwRotationRecords, dvwPlayerStats, dvwRallyRows, parseRallyCSV, parseCSV, autoMap, boxRowsToStats, parseRotationCSV, detectFormat } from '../src/engine/importers.js';
 import { simulateDVW } from '../src/engine/dvwsim.js';
 import { evaluateProspect } from '../src/engine/scouting.js';
 import { DEMO_TEAM, DEMO_OPPONENT, demoDVWTeams } from '../src/app/demo.js';
@@ -211,4 +211,27 @@ test('empirical-Bayes prior: recovers population mean', () => {
   const R = rng(4);
   const units = Array.from({ length: 200 }, () => { const p = 0.3 + 0.1 * R(); const n = 50; let y = 0; for (let k = 0; k < n; k++) if (R() < p) y++; return { y, n }; });
   near(fitBetaPrior(units).m, 0.35, 0.01);
+});
+
+test('DVW → rally log: every set starts 0–0 and scores follow the rallies', () => {
+  const { home, visiting } = demoDVWTeams();
+  const parsed = parseDVW(simulateDVW({ home, visiting, seed: 5 }).text);
+  for (const side of ['home', 'visiting']) {
+    const rows = dvwRallyRows(parsed, side, { matchId: 'm' });
+    ok(rows.length === parsed.rallies.length, 'one row per rally');
+    let a = 0, b = 0, set = 0;
+    for (const r of rows) {
+      if (r.set !== set) { set = r.set; a = 0; b = 0; }
+      ok(r.score_us === a && r.score_them === b, `score mismatch in set ${r.set}: ${r.score_us}-${r.score_them} vs ${a}-${b}`);
+      if (r.won) a++; else b++;
+    }
+  }
+});
+
+test('rally-log CSV is detected and parsed', () => {
+  const csv = parseCSV('match_id,set,score_us,score_them,rot_us,rot_them,serving,won\nm1,1,0,0,0,2,us,1\nm1,1,1,0,0,2,us,0\nm1,1,1,1,0,3,them,9\n');
+  ok(detectFormat(csv.headers) === 'rallies');
+  const rows = parseRallyCSV(csv);
+  ok(rows.length === 2, 'invalid won value dropped');
+  ok(rows[0].serving === 'us' && rows[1].won === 0 && rows[0].rot_them === 2);
 });

@@ -1,5 +1,5 @@
 import { getState, update, team, can, uid, snapshotLineup } from '../store.js';
-import { parseDVW, dvwRotationRecords, dvwPlayerStats, dvwStartingOrder, recordsToProfile, parseCSV, detectFormat, autoMap, boxRowsToStats, parseRotationCSV, parseMultiSeasonCSV, BOX_FIELDS, mergeStats } from '../../engine/importers.js';
+import { parseDVW, dvwRallyRows, parseRallyCSV, dvwRotationRecords, dvwPlayerStats, dvwStartingOrder, recordsToProfile, parseCSV, detectFormat, autoMap, boxRowsToStats, parseRotationCSV, parseMultiSeasonCSV, BOX_FIELDS, mergeStats } from '../../engine/importers.js';
 import { simulateDVW } from '../../engine/dvwsim.js';
 import { demoDVWTeams, demoHistory } from '../demo.js';
 import { esc, pct, lockPanel, toast } from '../ui.js';
@@ -68,6 +68,7 @@ export default {
             <li><b>SoloStats 123 / Live:</b> export your season or match report to CSV (Excel), then drop it here. Headers like <code>K, E, TA, SA, SE, R, RE, Digs, BS, BA</code> map automatically.</li>
             <li><b>Rotation sheets:</b> a CSV with <code>Rotation, SO%, BP%</code> — or counts like <code>so_won, so_total, bp_won, bp_total</code>.</li>
             <li><b>Several seasons:</b> <code>Season, Rotation, Phase, Won, Total</code> feeds the multi-season model.</li>
+            <li><b>Rally logs:</b> <code>match_id, set, score_us, score_them, rot_us, serving, won</code> (one row per rally) feed the predictive model in Model lab.</li>
           </ol>
           <p class="note">Recent imports: ${getState().imports.slice(-4).reverse().map((i) => `${esc(i.name)} <small>(${esc(i.kind)})</small>`).join(' · ') || 'none yet'}</p>
         </div>
@@ -91,6 +92,13 @@ export default {
     'apply-box': () => applyBox(),
     'apply-rot': () => applyRot(),
     'apply-hist': () => applyHist(),
+    'apply-rallies': () => {
+      const p = pending;
+      update((s) => { const t = team(); t.rallies = [...(t.rallies || []), ...p.rows]; logImport(s, p.name, 'Rally log'); });
+      pending = null;
+      toast(`Added ${p.rows.length.toLocaleString()} rallies`);
+      location.hash = '#model';
+    },
   },
   changes: {
     files: (el) => handleFiles([...el.files]),
@@ -118,7 +126,8 @@ function ingest(name, text) {
   } else {
     const csv = parseCSV(text);
     const fmt = detectFormat(csv.headers);
-    if (fmt === 'rotation') pending = { kind: 'rotation', name, csv, rot: parseRotationCSV(csv) };
+    if (fmt === 'rallies') pending = { kind: 'rallies', name, rows: parseRallyCSV(csv) };
+    else if (fmt === 'rotation') pending = { kind: 'rotation', name, csv, rot: parseRotationCSV(csv) };
     else if (fmt === 'multiseason') pending = { kind: 'history', name, csv, recs: parseMultiSeasonCSV(csv) };
     else if (fmt === 'boxscore' || fmt === 'prospects') {
       const feature = fmt === 'prospects' ? 'recruiting' : 'import-boxscore';
@@ -138,6 +147,11 @@ function review(p) {
   if (p.kind === 'rotation') return `<section class="panel" id="review"><h2 class="panel-title">Rotation sheet · ${esc(p.name)}</h2>${rotTable({ us: p.rot })}
     <label class="field"><span>Season (only used if the file has counts)</span><input id="rot-season" value="${new Date().getFullYear()}"></label>
     <div class="row"><button class="btn btn-primary" data-action="apply-rot">Use as this season's observed rates</button><button class="btn btn-ghost" data-action="cancel">Cancel</button></div></section>`;
+  if (p.kind === 'rallies') {
+    const m = new Set(p.rows.map((r) => r.match_id)).size;
+    return `<section class="panel" id="review"><h2 class="panel-title">Rally log · ${esc(p.name)}</h2><p>${p.rows.length.toLocaleString()} rallies from ${m} matches. They’ll be added to the rally log the predictive model learns from.</p>
+      <div class="row"><button class="btn btn-primary" data-action="apply-rallies">Add to rally log</button><button class="btn btn-ghost" data-action="cancel">Cancel</button></div></section>`;
+  }
   if (p.kind === 'history') {
     const seasons = [...new Set(p.recs.map((r) => r.season))];
     return `<section class="panel" id="review"><h2 class="panel-title">Multi-season history · ${esc(p.name)}</h2><p>${p.recs.length} rotation rows across ${seasons.length} seasons (${esc(seasons.join(', '))}), ${p.recs.reduce((s, r) => s + r.n, 0).toLocaleString()} rallies.</p>
@@ -166,6 +180,7 @@ function reviewDVW(p) {
       <label><input type="checkbox" id="dvw-hist" checked> Add rotation results to season history</label>
       <label><input type="checkbox" id="dvw-players" checked> Add player skill counts to the roster (matched by jersey number)</label>
       <label><input type="checkbox" id="dvw-opp" checked> Save ${esc(meta[them])}'s rotation profile as an opponent</label>
+      <label><input type="checkbox" id="dvw-rallies" checked> Add every rally to the rally log (for the predictive model)</label>
       <label><input type="checkbox" id="dvw-order"> Set our serving order from this match's first rotation</label>
     </fieldset>
     ${rotTable({ us: recordsToProfile(usRecs), usN: usRecs, them: recordsToProfile(themRecs), themN: themRecs, usName: meta[us], themName: meta[them] })}
@@ -210,7 +225,7 @@ function logImport(s, name, kind) { s.imports.push({ name, kind, at: new Date().
 function applyDVW() {
   const p = pending;
   const season = document.getElementById('dvw-season').value.trim() || p.season;
-  const opts = { hist: document.getElementById('dvw-hist').checked, players: document.getElementById('dvw-players').checked, opp: document.getElementById('dvw-opp').checked, order: document.getElementById('dvw-order').checked };
+  const opts = { hist: document.getElementById('dvw-hist').checked, players: document.getElementById('dvw-players').checked, opp: document.getElementById('dvw-opp').checked, order: document.getElementById('dvw-order').checked, rallies: document.getElementById('dvw-rallies').checked };
   const us = p.side, them = us === 'home' ? 'visiting' : 'home';
   update((s) => {
     const t = team();
@@ -226,6 +241,10 @@ function applyDVW() {
         if (!pl) { pl = { id: uid('p'), name: ps.name, num: ps.number, pos: ps.pos || 'OH', sets: 0 }; t.players.push(pl); }
         applyStats(pl, ps.stats, false);
       }
+    }
+    if (opts.rallies) {
+      const matchId = `${p.parsed.meta.date || 'match'}-${p.name}`.replace(/[^a-z0-9.-]+/gi, '-');
+      t.rallies = [...(t.rallies || []).filter((r) => r.match_id !== matchId), ...dvwRallyRows(p.parsed, us, { matchId, opponent: p.parsed.meta[them], season })];
     }
     if (opts.order) {
       const nums = dvwStartingOrder(p.parsed, us);

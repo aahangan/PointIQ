@@ -1,25 +1,59 @@
 # PointIQ
 
-Rotation analytics, match win probability, lineup modeling and recruiting for volleyball programs.
+**Predictive volleyball analytics.** PointIQ learns each rotation's side-out and point-scoring odds from rally-by-rally data, turns them into live set and match win probabilities with an exact Markov chain, and serves them to a JavaScript coaching app through a Python Flask API.
 
-PointIQ answers the questions a volleyball staff argues about before every match: which rotation to start in, whether the libero should serve, whether a DS for the opposite is worth two subs, which rotation to fix in practice, and how likely we are to win this match, set by set and rally by rally. The answers come from an exact Markov model of the game, not a spreadsheet average.
+It answers the questions a coaching staff argues about before every match: which rotation to start in, whether the libero should serve, which rotation to fix in practice, and how likely the team is to win, set by set and rally by rally.
+
+## Highlights
+
+- **Bayesian estimation for small samples.** A hierarchical logistic model (statsmodels, variational Bayes) partially pools the six rotations and absorbs opponent strength with a per-match random effect, so rotations with few rallies don't produce wild estimates.
+- **Exact Markov chain.** Every set state (score, both rotations, server) is solved exactly: backward induction below deuce, and a 216-state linear system for deuce. Best-of-3 and best-of-5 matches are handled too. A vectorized Monte Carlo simulation (20,000 sets per state) cross-checks it.
+- **Rigorous evaluation.** Grouped (by match) cross-validation, Brier score, log loss, calibration charts, and a match-level bootstrap 95% CI against a score-only baseline.
+- **Live model serving.** A Flask API (`/api/fit`, `/api/predict`, `/api/evaluate`) updates opponent strength rally by rally during a match. The front end's live tracker logs every rally and shows the model's win probability.
+- **Tested.** 15 pytest tests (Python model and API) plus 21 JavaScript engine tests.
+
+## Results (simulated seasons)
+
+60 simulated matches, 10,088 rally states, 5-fold cross-validation by match ([full report](model/reports/demo/REPORT.md)):
+
+| Model | Brier ↓ | Skill vs score-only | Improvement, 95% CI |
+|---|---|---|---|
+| Rotation model + in-match update | 0.158 | +5.1% | +0.009 [+0.003, +0.014] |
+| Rotation model (pre-match only) | 0.165 | +0.6% | +0.001 [−0.002, +0.004] |
+| Score-only baseline | 0.166 | — | — |
+
+**Pre-match rotation odds alone barely beat the score.** Updating opponent strength during the match is what produces a significant improvement. The model also recovers known rotation rates: true weak-rotation side-out 55.0%, estimated 54.6% (80% interval 52.5–56.7%).
+
+<img src="model/reports/demo/calibration.png" alt="Calibration chart: predicted vs observed set-win frequency" width="420">
+
+## Tech stack
+
+**Model:** Python, pandas, NumPy, SciPy, scikit-learn, statsmodels, Flask, matplotlib, pytest
+**App:** JavaScript (ES modules), HTML/CSS, SVG charts; no build step
+
+```mermaid
+flowchart LR
+  A[Live tracker / DataVolley / play-by-play] -->|rally log| B[Hierarchical Bayesian rotation model]
+  B -->|per-rotation odds| C[Exact Markov set & match model]
+  C --> D[Flask API]
+  D -->|win probability| E[JavaScript coaching app]
+  B --> F[Evaluation: Brier, calibration, baseline]
+```
 
 ## Run it
 
-No build step and no dependencies. It's plain ES modules.
-
 ```bash
-python3 tools/serve.py 8080
-```
-
-Then open http://localhost:8080/index.html. Tests run at http://localhost:8080/tests/index.html (21 tests). With Node 18+ installed, `npm test` runs the same suite.
-
-The predictive model is a Python service in [`model/`](model/README.md):
-
-```bash
+# model service
 cd model && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m pointiq_model serve     # then open Model lab in PointIQ
+.venv/bin/python -m pointiq_model demo      # simulate, fit, evaluate, write a report
+.venv/bin/python -m pointiq_model serve     # API on http://127.0.0.1:5050
+.venv/bin/python -m pytest -q tests
+
+# app (from the repo root, in a second terminal)
+python3 tools/serve.py 8080                 # open http://localhost:8080/index.html
 ```
+
+JavaScript tests run at http://localhost:8080/tests/index.html, or with `npm test` on Node 18+.
 
 ## What's in the app
 
@@ -64,7 +98,7 @@ The Live tracker logs every rally (rotation, server, score, outcome), and DataVo
 
 Details and caveats: [model/README.md](model/README.md), report: [model/reports/demo/REPORT.md](model/reports/demo/REPORT.md).
 
-## Honest limits
+## Limitations and next steps
 
 - **Effect sizes in the player (what-if) model are informed priors, not yet fit to data.** Rotation odds can now be learned from rallies (Model lab), but the coefficients in `LEAGUE.beta` that translate player stats into rotation odds (for example, how much +0.100 hitting efficiency moves side-out) still need re-estimating from a program's own rallies.
 - **The `.dvw` parser is tested against files written to the published DataVolley layout** (the same one the openvolley R/Python packages read), not yet against real VolleyMetrics exports. Validate on a handful of real files before a demo.
